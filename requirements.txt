@@ -1,0 +1,9 @@
+paho-mqtt~=1.6.1
+# Debian: python3-paho-mqtt
+
+pyserial~=3.5
+
+minimalmodbus~=2.0.1
+# sudo pip3 install minimalmodbus --user
+
+

@@ -1,0 +1,23 @@
+# register-name:
+# unit: unit of measure
+# address: ModBus address
+# decimals: nrof decimals; value will be divided by 10^decimals; resolution; Use 0 if Not Applicable
+# register type: U16, S16, U32, S32, STR (only 16 bytes)
+#
+# DO NOT CHANGE LINE BELOW!
+register-name,	unit,	address,    decimals,   type
+#VendorName,NA,	4096,	0,	STR
+V1,             V,	    45056,	    2,	        U16
+V2,             V,	    45057,	    2,	        U16
+V3,             V,	    45058,	    2,	        U16
+V12,            V,	    45059,	    2,	        U16
+V23,            V,	    45060,	    2,	        U16
+V31,            V,	    45061,	    2,	        U16
+F,              Hz,	    45062,	    2,	        U16
+I1,             mA,	    45065,	    0,	        U32
+I2,             mA,	    45067,	    0,	        U32
+I3,             mA,	    45069,	    0,	        U32
+In,             mA,	    45071,	    0,	        U32
+P,              kW,	    45073,	    2,	        S32
+Ea+,            kWh,    45152,	    0,	        U32
+P_Ea+,          kWh,    45160,	    0,	        U32
