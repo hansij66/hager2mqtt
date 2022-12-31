@@ -2,13 +2,12 @@
 
 """
  DESCRIPTION
-   Read hager power meter ECR380D
+   Read Hager power meter ECR*** family (eg ECR380D) via modbus/RS485
 
 4 Worker threads:
   - RS485/modbus Serial port reader
   - Telegram parser to MQTT messages
   - MQTT client
-  - HA Discovery
 
         This program is free software: you can redistribute it and/or modify
         it under the terms of the GNU General Public License as published by
@@ -25,7 +24,7 @@
 
 """
 
-__version__ = "1.0.0"
+__version__ = "2.0.0"
 __author__ = "Hans IJntema"
 __license__ = "GPLv3"
 
@@ -37,10 +36,9 @@ import threading
 
 # Local imports
 import config as cfg
-import hager_serial as hager
-import hager_parser as parser
-# import hadiscovery as ha
+import hager_modbus as hager
 import mqtt as mqtt
+import hager_rate as rate
 
 from log import logger
 logger.setLevel(cfg.loglevel)
@@ -82,35 +80,9 @@ def close(exit_code):
 # ------------------------------------------------------------------------------------
 # LATE GLOBALS
 # ------------------------------------------------------------------------------------
-trigger = threading.Event()
-threads_stopper = threading.Event()
-mqtt_stopper = threading.Event()
 
-# csv reader object
-telegram = list()
-
-#TEST
-#telegram.append("TEST1")
-
-# mqtt thread
-t_mqtt = mqtt.mqttclient(cfg.MQTT_BROKER,
-                         cfg.MQTT_PORT,
-                         cfg.MQTT_CLIENT_UNIQ,
-                         cfg.MQTT_RATE,
-                         cfg.MQTT_QOS,
-                         cfg.MQTT_USERNAME,
-                         cfg.MQTT_PASSWORD,
-                         mqtt_stopper,
-                         threads_stopper)
-
-# SerialPort thread
-t_serial = hager.TaskReadSerial(trigger, threads_stopper, telegram)
-
-# Telegram parser thread
-t_parse = parser.ParseTelegrams(trigger, threads_stopper, t_mqtt, telegram)
-
-# Send Home Assistant auto discovery MQTT's
-# t_discovery = ha.Discovery(threads_stopper, t_mqtt, __version__)
+# To flag that all threads (except MQTT) have to stop
+t_threads_stopper = threading.Event()
 
 
 def exit_gracefully(sig, stackframe):
@@ -123,49 +95,75 @@ def exit_gracefully(sig, stackframe):
     :return:
   """
 
-  logger.debug(f"Signal {signal}: >>")
-  threads_stopper.set()
+  logger.debug(f"Signal {sig} {stackframe}: >>")
+  t_threads_stopper.set()
   logger.info("<<")
 
 
 def main():
   logger.debug(">>")
 
-  # Set last will/testament
+  # To ensure that multiple hager.TaskReadPowerMeter will only use the modbus one at a time
+  modbus_semaphore = threading.Semaphore(1)
+
+  # To flag that MQTT thread has to stop
+  t_mqtt_stopper = threading.Event()
+
+  # MQTT thread
+  t_mqtt = mqtt.mqttclient(cfg.MQTT_BROKER,
+                           cfg.MQTT_PORT,
+                           cfg.MQTT_CLIENT_UNIQ,
+                           cfg.MQTT_RATE,
+                           cfg.MQTT_QOS,
+                           cfg.MQTT_USERNAME,
+                           cfg.MQTT_PASSWORD,
+                           t_mqtt_stopper,
+                           t_threads_stopper)
+
+  # List of hager.TaskReadPowerMeter objects
+  list_of_powermeters = list()
+
+  # This tread will ensure that all TaskReadPowerMeter will start reading at the same time
+  # (but sequentially, one after the other)
+  t_readrate = rate.ReadRateTimer(cfg.READ_RATE, len(cfg.MODBUS_HAGER_DEVICES), t_threads_stopper)
+
+  # Create one worker thread per powermeter to read powermeter and publish data to MQTT
+  for i in range(len(cfg.MODBUS_HAGER_DEVICES)):
+    name = cfg.MODBUS_HAGER_DEVICES[i]['name']
+    modbus_address = cfg.MODBUS_HAGER_DEVICES[i]['modbus_address']
+    register_map = cfg.MODBUS_HAGER_DEVICES[i]['register_map']
+    list_of_powermeters.append(hager.TaskReadPowerMeter(name, modbus_address, register_map, modbus_semaphore, t_readrate, t_mqtt, t_threads_stopper))
+
+  # Set MQTT last will/testament
   t_mqtt.will_set(cfg.MQTT_TOPIC_PREFIX + "/status", payload="offline", qos=cfg.MQTT_QOS, retain=True)
 
-  # Read modbus register file definitions and store in __modbus_register_map
-  #with open(cfg.MODBUS_REGISTER_MAP, 'r') as csvfile:
-    # remove comments lines
-  #  reader = csv.DictReader(filter(lambda row: row[0] != '#', csvfile))
-
-    # strip white spaces
-    #self.__modbus_register_map = [{k.strip(): v.strip() for k, v in row.items()} for row in reader]
-  #  telegram = [{k.strip(): v.strip() for k, v in row.items()} for row in reader]
-
-
-  # Start all threads
+  # Start MQTT thread
   t_mqtt.start()
-  t_parse.start()
-#  t_discovery.start()
-  t_serial.start()
 
-  # Set status to online
+  # Start TaskReadPowerMeter event timer
+  t_readrate.start()
+
+  # Start all TaskReadPowerMeter threads
+  for i in range(len(cfg.MODBUS_HAGER_DEVICES)):
+    list_of_powermeters[i].start()
+
+  # Set MQTT status to online and publish SW version of MQTT parser
   t_mqtt.set_status(cfg.MQTT_TOPIC_PREFIX + "/status", "online", retain=True)
-  t_mqtt.do_publish(cfg.MQTT_TOPIC_PREFIX + "/sw-version", f"{__version__}", retain=True)
+  t_mqtt.do_publish(cfg.MQTT_TOPIC_PREFIX + "/sw-version", f"main={__version__};mqtt={mqtt.__version__}", retain=True)
 
-  # block till t_serial stops receiving telegrams/exits
-  t_serial.join()
+  # block till last TaskReadPowerMeter thread stops receiving telegrams/exits
+  for i in range(len(cfg.MODBUS_HAGER_DEVICES)):
+    list_of_powermeters[i].join()
+
   logger.debug("t_serial.join exited; set stopper for other threats")
-  threads_stopper.set()
+  t_threads_stopper.set()
 
   # Set status to offline
   t_mqtt.set_status(cfg.MQTT_TOPIC_PREFIX + "/status", "offline", retain=True)
 
-  # Todo check if MQTT queue is empty before setting stopper
-  # Use a simple delay of 1sec before closing mqtt
+  # Use a simple delay of 1sec before closing MQTT, to allow last MQQT messages to be send
   time.sleep(1)
-  mqtt_stopper.set()
+  t_mqtt_stopper.set()
 
   logger.debug("<<")
   return
