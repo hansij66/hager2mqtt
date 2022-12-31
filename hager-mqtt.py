@@ -24,7 +24,7 @@
 
 """
 
-__version__ = "2.0.0"
+__version__ = "2.0.2"
 __author__ = "Hans IJntema"
 __license__ = "GPLv3"
 
@@ -63,20 +63,6 @@ if sys.platform == "linux":
     logger.info(f"{lockfile} already running. Exiting; {err}")
     sys.exit(1)
 
-
-def close(exit_code):
-  """
-  Args:
-    :param int exit_code: 0 success; 1 error
-
-  Returns:
-    None
-  """
-
-  logger.info(f"Exitcode = {exit_code} >>")
-  sys.exit(exit_code)
-
-
 # ------------------------------------------------------------------------------------
 # LATE GLOBALS
 # ------------------------------------------------------------------------------------
@@ -84,6 +70,22 @@ def close(exit_code):
 # To flag that all threads (except MQTT) have to stop
 t_threads_stopper = threading.Event()
 
+# Assumption is that exit is with error unless called via exit_gracefully()
+exit_code = 1
+
+
+def close(exitcode):
+  """
+  Args:
+    :param int exitcode: 0 success; 1 error
+
+  Returns:
+    None
+  """
+
+  time.sleep(1)
+  logger.info(f"Exitcode = {exitcode} >>")
+  sys.exit(exitcode)
 
 def exit_gracefully(sig, stackframe):
   """
@@ -94,11 +96,15 @@ def exit_gracefully(sig, stackframe):
     :param str stackframe: current stack frame
     :return:
   """
+  global exit_code
 
   logger.debug(f"Signal {sig} {stackframe}: >>")
+
+  # indicate that this is a clean shutdown
+  exit_code = 0
   t_threads_stopper.set()
   logger.info("<<")
-
+  return
 
 def main():
   logger.debug(">>")
@@ -181,4 +187,7 @@ if __name__ == '__main__':
   main()
 
   logger.debug("__main__: <<")
-  close(0)
+
+  logger.error(f"EXIT_CODE = {exit_code}")
+
+  close(exit_code)

@@ -147,8 +147,8 @@ class TaskReadPowerMeter(threading.Thread):
     logger.debug(f">> {self.__name}; MODBUS={self.__modbusclient}")
 
     while not self.__t_threads_stopper.is_set():
+      # wait till time-out
       if not self.__t_readrate.wait(0.2):
-        #logger.debug(f"{self.__name}: Waiting for ReadRateTimer event timed out; retry")
         continue
       else:
         try:
@@ -200,18 +200,30 @@ class TaskReadPowerMeter(threading.Thread):
   def run(self):
     logger.debug(f">> {self.__name}")
 
+    current_dir = os.path.dirname(os.path.realpath(__file__))
+    register_map_file = current_dir + "/" + self.__register_map
+
     # Read modbus register file definitions and store in __modbus_register_map
-    with open(self.__register_map, 'r') as csvfile:
+    try:
+      with open(register_map_file, 'r') as csvfile:
 
-      # remove comments lines
-      reader = csv.DictReader(filter(lambda row: row[0] != '#', csvfile))
+        # remove comments lines
+        reader = csv.DictReader(filter(lambda row: row[0] != '#', csvfile))
 
-      # strip white spaces
-      register_map = [{k.strip(): v.strip() for k, v in row.items()} for row in reader]
+        # strip white spaces
+        register_map = [{k.strip(): v.strip() for k, v in row.items()} for row in reader]
 
-      # Append every csv line with registers key:values to telegram list
-      for r in register_map:
-        self.__telegram.append(r)
+        # Append every csv line with registers key:values to telegram list
+        for r in register_map:
+          self.__telegram.append(r)
+    except FileNotFoundError:
+      logger.error(f"File {self.__register_map} not found")
+      self.__t_threads_stopper.set()
+      return
+    except Exception as e:
+      logger.warning(f"{self.__name}: {e}")
+      self.__t_threads_stopper.set()
+      return
 
     # Setup connection with modbus power meter
     while not (self.__t_threads_stopper.is_set() or self.__is_connected):
