@@ -12,7 +12,7 @@ MQTT client/parser for Hager ECR180D/ECR380D family kWh/power meters.
 ## Usage:
 * Copy `systemd/hager-mqtt.service` to `/etc/systemd/system`
 * Adapt path in `hager-mqtt.service` to your install location (default: `/opt/iot/hager`)
-* Copy `config.rename.py` to `config.py` and adapt for your configuration (minimal: mqtt ip, username, password)
+* Copy `config.rename.py` to `config.py` and adapt for your configuration (minimal: mqtt ip, username, password, RS485)
 * `sudo systemctl enable hager-mqtt`
 * `sudo systemctl start hager-mqtt`
 
@@ -29,7 +29,7 @@ to test & inspect MQTT messages
 Tested under Linux; there is no reason why it does not work under Windows.
 
 ## InfluxDB
-* Use `telegraf-hager-powermeters.conf` as Telegraf configuration file to get Hager MQTT data into InfluxDB (version 1.x)
+* Use `telegraf-hager-powermeters.conf` as Telegraf configuration file to get Hager MQTT data into InfluxDB
 
 ## Licence
 GPL v3

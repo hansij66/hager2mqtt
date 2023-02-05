@@ -24,7 +24,7 @@
 
 """
 
-__version__ = "2.0.2"
+__version__ = "2.0.3"
 __author__ = "Hans IJntema"
 __license__ = "GPLv3"
 
@@ -38,7 +38,7 @@ import threading
 import config as cfg
 import hager_modbus as hager
 import mqtt as mqtt
-import hager_rate as rate
+import sample_rate as rate
 
 from log import logger
 logger.setLevel(cfg.loglevel)
@@ -167,7 +167,7 @@ def main():
   # Set status to offline
   t_mqtt.set_status(cfg.MQTT_TOPIC_PREFIX + "/status", "offline", retain=True)
 
-  # Use a simple delay of 1sec before closing MQTT, to allow last MQQT messages to be send
+  # Use a simple delay of 1sec before closing MQTT, to allow last MQTT messages to be send
   time.sleep(1)
   t_mqtt_stopper.set()
 

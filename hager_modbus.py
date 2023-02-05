@@ -62,6 +62,8 @@ class TaskReadPowerMeter(threading.Thread):
 
     self.__telegram = list()
 
+    self.__json_values = dict()
+
     # Handle to minimalmodbus Instrument
     self.__modbusclient = None
 
@@ -81,7 +83,7 @@ class TaskReadPowerMeter(threading.Thread):
   def __del__(self):
     logger.debug(f">> {self.__name}")
 
-  def __publish_telegram(self, json_dict):
+  def __publish_telegram(self):
     """
     Publish the dictionaries per topic
 
@@ -96,8 +98,9 @@ class TaskReadPowerMeter(threading.Thread):
     topic = topic.replace('//', '/')
 
     # Only when power meter is connected, publish values
+    # TODO....is  this called if power meter is not connected?
     if self.__is_connected:
-      message = json.dumps(json_dict, sort_keys=True, separators=(',', ':'))
+      message = json.dumps(self.__json_values, sort_keys=True, separators=(',', ':'))
       self.__t_mqtt.do_publish(topic, message, retain=False)
 
     self.__t_mqtt.do_publish(topic + "/counter", str(self.__counter), retain=False)
@@ -105,33 +108,6 @@ class TaskReadPowerMeter(threading.Thread):
     # Indicate whether power meter is connected (or not)
     status = "power on" if self.__is_connected else "power off"
     self.__t_mqtt.do_publish(topic + "/status", status, retain=True)
-
-    logger.debug(f"<< {self.__name}")
-    return
-
-  def __decode_telegrams(self):
-    """
-    Args:
-      self.__telegram
-
-    Returns:
-
-    """
-    logger.debug(f">> {self.__name}; TELEGRAM = {self.__telegram}")
-    json_values = dict()
-
-    # Get timestamp from ReadRateTimer thread
-    ts = self.__t_readrate.timestamp()
-
-    # Build a dict of key:value, for MQTT JSON
-    json_values["timestamp"] = ts
-
-    # Only when power meter is connected, parse values
-    if self.__is_connected:
-      for r in self.__telegram:
-        json_values[r['register-name']] = r['value']
-
-    self.__publish_telegram(json_values)
 
     logger.debug(f"<< {self.__name}")
     return
@@ -146,6 +122,9 @@ class TaskReadPowerMeter(threading.Thread):
     """
     logger.debug(f">> {self.__name}; MODBUS={self.__modbusclient}")
 
+    # Clear the dict where we store all Kamstrup meter values
+    self.__json_values.clear()
+
     while not self.__t_threads_stopper.is_set():
       # wait till time-out
       if not self.__t_readrate.wait(0.2):
@@ -155,6 +134,11 @@ class TaskReadPowerMeter(threading.Thread):
           t = time.time()
           self.__modbus_semaphore.acquire()
           logger.debug(f"{self.__name}: Acquired modbus semapahore after t = {round(time.time() - t, 2)} seconds")
+
+          # Build a dict of key:value, for MQTT JSON
+          # Get timestamp from ReadRateTimer thread
+          ts = self.__t_readrate.timestamp()
+          self.__json_values["timestamp"] = ts
 
           # Read modbus registers
           for r in self.__telegram:
@@ -174,7 +158,9 @@ class TaskReadPowerMeter(threading.Thread):
         except Exception as e:
           logger.debug(f"{self.__name}: {e}")
           self.__is_connected = False
-          self.__decode_telegrams()
+
+          ## chnaged in v2.0.3
+          #self.__decode_telegrams()
         else:
           # We are still connected to Hager Power meter
           self.__is_connected = True
@@ -183,10 +169,20 @@ class TaskReadPowerMeter(threading.Thread):
           self.__counter += 1
 
           # Start parsing
-          self.__decode_telegrams()
+          ## chnaged in v2.0.3
+          #self.__decode_telegrams()
         finally:
+          # Start parsing
+          ## chnaged in v2.0.3
           self.__modbus_semaphore.release()
           self.__t_readrate.release(self.__name)
+
+          # Parse values
+          if self.__is_connected:
+            for r in self.__telegram:
+              self.__json_values[r['register-name']] = r['value']
+
+          self.__publish_telegram()
 
       # As __t_readrate is still set, and to prevent that we will read again the power meter;
       # wait till __t_readrate gets cleared; After __t_readrate is cleared, start from top
