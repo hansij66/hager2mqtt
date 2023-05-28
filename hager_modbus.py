@@ -55,8 +55,13 @@ class TaskReadPowerMeter(threading.Thread):
     self.__name = name
     self.__modbus_address = modbus_address
     self.__register_map = register_map
+
+    # Allow only one hager device at a time to be read
     self.__modbus_semaphore = modbus_semaphore
+
+    # Synchronize when various hager devices should start to read modbus
     self.__t_readrate = t_readrate
+
     self.__t_mqtt = t_mqtt
     self.__t_threads_stopper = t_threads_stopper
 
@@ -126,8 +131,10 @@ class TaskReadPowerMeter(threading.Thread):
     self.__json_values.clear()
 
     while not self.__t_threads_stopper.is_set():
-      # wait till time-out
+      # wait for releasing ReadRateTimer lock to release or untill time-out
       if not self.__t_readrate.wait(0.2):
+        # returns False on time out; start over again checking __t_threads_stopper.is_set():
+        # returns True if underlying lock is released, continue below
         continue
       else:
         try:
@@ -159,8 +166,6 @@ class TaskReadPowerMeter(threading.Thread):
           logger.debug(f"{self.__name}: {e}")
           self.__is_connected = False
 
-          ## chnaged in v2.0.3
-          #self.__decode_telegrams()
         else:
           # We are still connected to Hager Power meter
           self.__is_connected = True
@@ -168,13 +173,11 @@ class TaskReadPowerMeter(threading.Thread):
           # We did read values; increment counter
           self.__counter += 1
 
-          # Start parsing
-          ## chnaged in v2.0.3
-          #self.__decode_telegrams()
         finally:
           # Start parsing
-          ## chnaged in v2.0.3
           self.__modbus_semaphore.release()
+
+          # Flag to ReadRateTimer that we are done
           self.__t_readrate.release(self.__name)
 
           # Parse values

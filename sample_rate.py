@@ -47,6 +47,7 @@ class ReadRateTimer(threading.Thread):
 
     # number of threads which needs to be synchronized with ReadRateTimer
     self.__nrof_threads = nrof_threads
+
     self.__t_threads_stopper = t_threads_stopper
     self.__t_event = threading.Event()
 
@@ -86,13 +87,14 @@ class ReadRateTimer(threading.Thread):
 
     if self.__set_counter == 0:
       self.__t_event.clear()
-      logger.info(f"Read time elapsed = {round(time.time() - self.__triggertime, 2)} seconds")
+      logger.info(f"Modbus Read time elapsed = {round(time.time() - self.__triggertime, 2)} seconds")
 
   def timestamp(self):
     logger.debug(">>")
 
     if cfg.SYNC_TIMESTAMP:
       # all worker thread gets same timestamp
+      # (to have all measurements in influxdb on same timestamp)
       return self.__ts
     else:
       # every worker thread gets its own timestamp
@@ -112,6 +114,7 @@ class ReadRateTimer(threading.Thread):
       while not self.__t_threads_stopper.is_set() and not self.__t_event.is_set():
         t_elapsed = int(time.time()) - self.__lastreadtime
 
+        # TODO...if reading hager devices exceeds __interval, does this work correctly?
         if t_elapsed > self.__interval:
           logger.debug(f"Read Rate has exceeded wait threshold")
           # Read Rate has exceeded wait threshold;
@@ -127,6 +130,8 @@ class ReadRateTimer(threading.Thread):
           # Set status (timer has shot)
           logger.debug(f"Flag set")
           self.__triggertime = time.time()
+
+          # Set the internal flag to true. All threads waiting for it to become true are awakened.
           self.__t_event.set()
 
           # Break from inner while loop
@@ -139,8 +144,11 @@ class ReadRateTimer(threading.Thread):
             # Reset status
             # This can be done without if statement, but that will pollute the debug messages
             if self.is_set():
+              # Reset the internal flag to false. Subsequently, threads calling wait() will block until set() is called to set the internal flag to true again.
               self.__t_event.clear()
               logger.info(f"Read time elapsed = {round(time.time() - self.__triggertime, 2)} seconds")
+            else:
+              time.sleep(0.2)
           else:
             # wait a bit
             time.sleep(0.2)
