@@ -22,12 +22,6 @@
         You should have received a copy of the GNU General Public License
         along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-  v2.1.1
-  - Fix 100% cpu cre utiliation issue
-
-  v2.1.0
-  - update fpr mqtt library v5
-
 """
 
 __version__ = "2.1.1"

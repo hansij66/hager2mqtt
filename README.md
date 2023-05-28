@@ -42,3 +42,8 @@ GPL v3
 2.0.0
 * Support multiple Hager power meters on one single RS485 bus
 
+2.1.0 
+* update fpr mqtt library v5
+
+2.1.1 
+* Fix 100% cpu/core utilization issue
